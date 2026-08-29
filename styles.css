@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Finlog - Trendy Glassmorphism Design System
+   Finlog - Trendy Glassmorphism Design System (v1.1.0)
    ========================================================================== */
 
 :root {
@@ -227,7 +227,6 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-
 }
 .status-dot.online {
   background: var(--income-color);
@@ -353,6 +352,7 @@ body {
 
 .btn-glass:hover {
   background: var(--glass-bg-hover);
+  border-color: var(--glass-border-light);
 }
 
 .btn-sm {
@@ -534,7 +534,7 @@ body {
 .chart-slice {
   fill: none;
   stroke-width: 12;
-  stroke-dasharray: 238.76; /* 2 * PI * 38 */
+  stroke-dasharray: 238.76;
   stroke-dashoffset: 238.76;
   transition: stroke-dashoffset 1s ease-in-out;
   stroke-linecap: round;

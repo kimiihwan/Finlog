@@ -1,7 +1,9 @@
 /**
  * Finlog - Glassmorphic Financial Tracker Core Logic
- * Supports local state management with GCP Firestore API compatibility
+ * Version: 1.2.0 (Data Modeling & DB Ready Edition)
  */
+
+const APP_VERSION = '1.2.0';
 
 // Category Definitions with Glassmorphic Color Palette
 const CATEGORY_COLORS = {
@@ -14,7 +16,7 @@ const CATEGORY_COLORS = {
   '기타': '#f59e0b'      // Amber
 };
 
-// Initial Mock Data (If LocalStorage is empty)
+// Initial Mock Data
 const INITIAL_TRANSACTIONS = [
   { id: '1', date: '2026-08-28', type: 'expense', category: '식비', memo: '스타벅스 자바칩 프라푸치노', amount: 6800, payment: '신한 체크카드' },
   { id: '2', date: '2026-08-25', type: 'income', category: '급여/수입', memo: '8월 월급 수입', amount: 3500000, payment: '카카오뱅크 계좌' },
@@ -24,11 +26,21 @@ const INITIAL_TRANSACTIONS = [
   { id: '6', date: '2026-08-15', type: 'expense', category: '문화/취미', memo: 'CGV 영화 관람 및 팝콘', amount: 32000, payment: '현금' }
 ];
 
+// Initial Recurring Items
+const INITIAL_RECURRING = [
+  { id: 'r1', day: 25, category: '주거/통신', memo: 'SKT 통신비 자동이체', amount: 65000, payment: '카카오뱅크 계좌' },
+  { id: 'r2', day: 14, category: '문화/취미', memo: '넷플릭스 4K 프리미엄 구독', amount: 17000, payment: '신한 체크카드' },
+  { id: 'r3', day: 1, category: '주거/통신', memo: '월세 자동이체', amount: 550000, payment: '카카오뱅크 계좌' }
+];
+
 class TransactionStore {
   constructor() {
     this.storageKey = 'finlog_transactions_v1';
+    this.recurringKey = 'finlog_recurring_v1';
     this.budgetKey = 'finlog_monthly_budget_v1';
+    
     this.transactions = this.loadTransactions();
+    this.recurringItems = this.loadRecurring();
     this.monthlyBudget = parseFloat(localStorage.getItem(this.budgetKey)) || 1500000;
   }
 
@@ -49,6 +61,23 @@ class TransactionStore {
     localStorage.setItem(this.storageKey, JSON.stringify(this.transactions));
   }
 
+  loadRecurring() {
+    const data = localStorage.getItem(this.recurringKey);
+    if (!data) {
+      localStorage.setItem(this.recurringKey, JSON.stringify(INITIAL_RECURRING));
+      return INITIAL_RECURRING;
+    }
+    try {
+      return JSON.parse(data);
+    } catch (e) {
+      return INITIAL_RECURRING;
+    }
+  }
+
+  saveRecurring() {
+    localStorage.setItem(this.recurringKey, JSON.stringify(this.recurringItems));
+  }
+
   addTransaction(item) {
     item.id = Date.now().toString();
     this.transactions.unshift(item);
@@ -61,15 +90,40 @@ class TransactionStore {
     this.saveTransactions();
   }
 
+  addRecurring(item) {
+    item.id = 'r_' + Date.now().toString();
+    this.recurringItems.push(item);
+    this.saveRecurring();
+    return item;
+  }
+
+  deleteRecurring(id) {
+    this.recurringItems = this.recurringItems.filter(r => r.id !== id);
+    this.saveRecurring();
+  }
+
+  applyRecurringToCurrentMonth(recurringId, periodMonth) {
+    const rec = this.recurringItems.find(r => r.id === recurringId);
+    if (!rec) return;
+
+    const dayStr = String(rec.day).padStart(2, '0');
+    const date = `${periodMonth}-${dayStr}`;
+
+    this.addTransaction({
+      type: 'expense',
+      category: rec.category,
+      memo: `[고정지출] ${rec.memo}`,
+      amount: rec.amount,
+      payment: rec.payment,
+      date
+    });
+  }
+
   getFilteredTransactions({ periodMonth, type, category, searchKeyword }) {
     return this.transactions.filter(t => {
-      // Period filter (YYYY-MM)
       if (periodMonth && !t.date.startsWith(periodMonth)) return false;
-      // Type filter
       if (type && type !== 'all' && t.type !== type) return false;
-      // Category filter
       if (category && category !== 'all' && t.category !== category) return false;
-      // Search Keyword
       if (searchKeyword) {
         const kw = searchKeyword.toLowerCase();
         const matchesMemo = t.memo.toLowerCase().includes(kw);
@@ -112,13 +166,108 @@ class TransactionStore {
       budgetProgress
     };
   }
+
+  exportToCSV() {
+    if (this.transactions.length === 0) {
+      alert('내보낼 거래 내역이 없습니다.');
+      return;
+    }
+    const headers = ['id', 'date', 'type', 'category', 'memo', 'amount', 'payment'];
+    const rows = this.transactions.map(t => [
+      t.id,
+      t.date,
+      t.type,
+      t.category,
+      `"${t.memo.replace(/"/g, '""')}"`,
+      t.amount,
+      t.payment
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Finlog_Dataset_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /**
+   * Generates SQL Dump script for DB & AI Modeling
+   */
+  exportToSQL() {
+    if (this.transactions.length === 0) {
+      alert('내보낼 거래 내역이 없습니다.');
+      return;
+    }
+
+    let sql = `-- Finlog Transaction Dataset (PostgreSQL / SQLite Compatible)\n`;
+    sql += `-- Generated At: ${new Date().toISOString()}\n\n`;
+    sql += `CREATE TABLE IF NOT EXISTS transactions (\n`;
+    sql += `  id VARCHAR(64) PRIMARY KEY,\n`;
+    sql += `  date DATE NOT NULL,\n`;
+    sql += `  type VARCHAR(16) NOT NULL,\n`;
+    sql += `  category VARCHAR(32) NOT NULL,\n`;
+    sql += `  memo TEXT,\n`;
+    sql += `  amount NUMERIC(12, 2) NOT NULL,\n`;
+    sql += `  payment_method VARCHAR(64),\n`;
+    sql += `  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n`;
+    sql += `);\n\n`;
+
+    this.transactions.forEach(t => {
+      const escapedMemo = t.memo.replace(/'/g, "''");
+      sql += `INSERT INTO transactions (id, date, type, category, memo, amount, payment_method) VALUES ('${t.id}', '${t.date}', '${t.type}', '${t.category}', '${escapedMemo}', ${t.amount}, '${t.payment}');\n`;
+    });
+
+    const blob = new Blob([sql], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Finlog_DB_Dump_${new Date().toISOString().slice(0, 10)}.sql`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  importFromCSV(csvText) {
+    const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '');
+    if (lines.length <= 1) return 0;
+
+    let addedCount = 0;
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(',');
+      if (parts.length >= 5) {
+        const date = parts[0].trim();
+        const typeStr = parts[1].trim();
+        const category = parts[2].trim();
+        const memo = parts[3].trim().replace(/^"|"$/g, '');
+        const amount = parseFloat(parts[4]);
+        const payment = parts[5] ? parts[5].trim() : '기타';
+
+        if (date && amount) {
+          this.transactions.push({
+            id: 'imp_' + Date.now() + '_' + i,
+            date,
+            type: typeStr === '수입' || typeStr === 'income' ? 'income' : 'expense',
+            category: category || '기타',
+            memo: memo || '불러온 거래',
+            amount: amount || 0,
+            payment: payment || '기타'
+          });
+          addedCount++;
+        }
+      }
+    }
+    this.saveTransactions();
+    return addedCount;
+  }
 }
 
 // UI Controller Class
 class FinlogUI {
   constructor() {
     this.store = new TransactionStore();
-    this.currentDate = new Date(2026, 7, 1); // August 2026
+    this.currentDate = new Date(2026, 7, 1);
     this.activeType = 'expense';
 
     this.initElements();
@@ -127,17 +276,19 @@ class FinlogUI {
   }
 
   initElements() {
-    // Navigation & Tabs
     this.navItems = document.querySelectorAll('.nav-item');
     this.tabViews = document.querySelectorAll('.tab-view');
 
-    // Header & Controls
     this.currentPeriodDisplay = document.getElementById('currentPeriodDisplay');
     this.prevMonthBtn = document.getElementById('prevMonth');
     this.nextMonthBtn = document.getElementById('nextMonth');
     this.searchInput = document.getElementById('searchInput');
+    this.btnExportCsv = document.getElementById('btnExportCsv');
+    this.btnExportCsvSettings = document.getElementById('btnExportCsvSettings');
+    this.btnExportSql = document.getElementById('btnExportSql');
+    this.btnExportSqlSettings = document.getElementById('btnExportSqlSettings');
+    this.importCsvInput = document.getElementById('importCsvInput');
 
-    // Summary Elements
     this.totalBalanceEl = document.getElementById('totalBalance');
     this.monthlyIncomeEl = document.getElementById('monthlyIncome');
     this.monthlyExpenseEl = document.getElementById('monthlyExpense');
@@ -146,9 +297,9 @@ class FinlogUI {
     this.remainingBudgetEl = document.getElementById('remainingBudget');
     this.budgetProgressFill = document.getElementById('budgetProgressFill');
 
-    // Tables & Charts
     this.recentTransactionsBody = document.getElementById('recentTransactionsBody');
     this.fullTransactionsBody = document.getElementById('fullTransactionsBody');
+    this.recurringTableBody = document.getElementById('recurringTableBody');
     this.typeFilter = document.getElementById('typeFilter');
     this.categoryFilter = document.getElementById('categoryFilter');
     this.categoryDonutChart = document.getElementById('categoryDonutChart');
@@ -156,7 +307,6 @@ class FinlogUI {
     this.categoryLegend = document.getElementById('categoryLegend');
     this.chartTotalAmount = document.getElementById('chartTotalAmount');
 
-    // Modal Elements
     this.addModal = document.getElementById('addModal');
     this.btnOpenAddModal = document.getElementById('btnOpenAddModal');
     this.btnCloseModal = document.getElementById('btnCloseModal');
@@ -165,12 +315,16 @@ class FinlogUI {
     this.toggleBtns = document.querySelectorAll('.type-toggle-buttons .toggle-btn');
     this.inputDate = document.getElementById('inputDate');
 
-    // Set Default Modal Date to today
-    this.inputDate.valueAsDate = new Date();
+    this.recurringModal = document.getElementById('recurringModal');
+    this.btnOpenRecurringModal = document.getElementById('btnOpenRecurringModal');
+    this.btnCloseRecurringModal = document.getElementById('btnCloseRecurringModal');
+    this.btnCancelRecurringModal = document.getElementById('btnCancelRecurringModal');
+    this.addRecurringForm = document.getElementById('addRecurringForm');
+
+    if (this.inputDate) this.inputDate.valueAsDate = new Date();
   }
 
   bindEvents() {
-    // Tab switching
     this.navItems.forEach(item => {
       item.addEventListener('click', (e) => {
         e.preventDefault();
@@ -184,7 +338,6 @@ class FinlogUI {
       this.switchTab('transactions');
     });
 
-    // Month Navigation
     this.prevMonthBtn.addEventListener('click', () => {
       this.currentDate.setMonth(this.currentDate.getMonth() - 1);
       this.render();
@@ -195,25 +348,36 @@ class FinlogUI {
       this.render();
     });
 
-    // Search Input
-    this.searchInput.addEventListener('input', () => {
-      this.renderTables();
-    });
-
-    // Table Filters
+    this.searchInput.addEventListener('input', () => this.renderTables());
     this.typeFilter?.addEventListener('change', () => this.renderTables());
     this.categoryFilter?.addEventListener('change', () => this.renderTables());
 
-    // Modal Control
-    this.btnOpenAddModal.addEventListener('click', () => this.openModal());
-    this.btnCloseModal.addEventListener('click', () => this.closeModal());
-    this.btnCancelModal.addEventListener('click', () => this.closeModal());
+    // CSV & SQL Export / Import
+    this.btnExportCsv?.addEventListener('click', () => this.store.exportToCSV());
+    this.btnExportCsvSettings?.addEventListener('click', () => this.store.exportToCSV());
+    this.btnExportSql?.addEventListener('click', () => this.store.exportToSQL());
+    this.btnExportSqlSettings?.addEventListener('click', () => this.store.exportToSQL());
 
-    this.addModal.addEventListener('click', (e) => {
-      if (e.target === this.addModal) this.closeModal();
+    this.importCsvInput?.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const count = this.store.importFromCSV(evt.target.result);
+        alert(`${count}건의 거래 내역을 성공적으로 불러왔습니다.`);
+        this.render();
+      };
+      reader.readAsText(file, 'UTF-8');
     });
 
-    // Income/Expense Toggle in Modal
+    this.btnOpenAddModal.addEventListener('click', () => this.openModal(this.addModal));
+    this.btnCloseModal.addEventListener('click', () => this.closeModal(this.addModal));
+    this.btnCancelModal.addEventListener('click', () => this.closeModal(this.addModal));
+
+    this.btnOpenRecurringModal?.addEventListener('click', () => this.openModal(this.recurringModal));
+    this.btnCloseRecurringModal?.addEventListener('click', () => this.closeModal(this.recurringModal));
+    this.btnCancelRecurringModal?.addEventListener('click', () => this.closeModal(this.recurringModal));
+
     this.toggleBtns.forEach(btn => {
       btn.addEventListener('click', () => {
         this.toggleBtns.forEach(b => b.classList.remove('active'));
@@ -222,10 +386,14 @@ class FinlogUI {
       });
     });
 
-    // Submit Form
     this.addForm.addEventListener('submit', (e) => {
       e.preventDefault();
       this.handleAddSubmit();
+    });
+
+    this.addRecurringForm?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.handleAddRecurringSubmit();
     });
   }
 
@@ -237,30 +405,28 @@ class FinlogUI {
 
   switchTab(tabId) {
     this.navItems.forEach(item => {
-      if (item.getAttribute('data-tab') === tabId) {
-        item.classList.add('active');
-      } else {
-        item.classList.remove('active');
-      }
+      if (item.getAttribute('data-tab') === tabId) item.classList.add('active');
+      else item.classList.remove('active');
     });
 
     this.tabViews.forEach(view => {
-      if (view.id === tabId) {
-        view.classList.add('active');
-      } else {
-        view.classList.remove('active');
-      }
+      if (view.id === tabId) view.classList.add('active');
+      else view.classList.remove('active');
     });
   }
 
-  openModal() {
-    this.addModal.classList.add('active');
+  openModal(modal) {
+    modal?.classList.add('active');
   }
 
-  closeModal() {
-    this.addModal.classList.remove('active');
-    this.addForm.reset();
-    this.inputDate.valueAsDate = new Date();
+  closeModal(modal) {
+    modal?.classList.remove('active');
+    if (modal === this.addModal) {
+      this.addForm.reset();
+      this.inputDate.valueAsDate = new Date();
+    } else if (modal === this.recurringModal) {
+      this.addRecurringForm?.reset();
+    }
   }
 
   handleAddSubmit() {
@@ -281,7 +447,21 @@ class FinlogUI {
       payment
     });
 
-    this.closeModal();
+    this.closeModal(this.addModal);
+    this.render();
+  }
+
+  handleAddRecurringSubmit() {
+    const day = parseInt(document.getElementById('recurringDay').value);
+    const amount = parseFloat(document.getElementById('recurringAmount').value);
+    const category = document.getElementById('recurringCategory').value;
+    const memo = document.getElementById('recurringMemo').value;
+    const payment = document.getElementById('recurringPayment').value;
+
+    if (!day || !amount || !memo) return;
+
+    this.store.addRecurring({ day, amount, category, memo, payment });
+    this.closeModal(this.recurringModal);
     this.render();
   }
 
@@ -294,7 +474,6 @@ class FinlogUI {
     const [yearStr, monthStr] = periodMonth.split('-');
     this.currentPeriodDisplay.textContent = `${yearStr}년 ${parseInt(monthStr)}월`;
 
-    // Render Metrics
     const summary = this.store.calculateSummary(periodMonth);
     this.totalBalanceEl.textContent = this.formatCurrency(summary.netBalance);
     this.monthlyIncomeEl.textContent = this.formatCurrency(summary.totalIncome);
@@ -305,6 +484,7 @@ class FinlogUI {
     this.budgetProgressFill.style.width = `${summary.budgetProgress}%`;
 
     this.renderTables();
+    this.renderRecurringTable();
     this.renderChart(periodMonth, summary.totalExpense);
     this.renderAnalytics(periodMonth);
   }
@@ -322,9 +502,7 @@ class FinlogUI {
       searchKeyword
     });
 
-    // Recent items (top 5)
     this.renderTableRows(this.recentTransactionsBody, items.slice(0, 5));
-    // Full items
     this.renderTableRows(this.fullTransactionsBody, items);
   }
 
@@ -364,6 +542,56 @@ class FinlogUI {
     `).join('');
   }
 
+  renderRecurringTable() {
+    if (!this.recurringTableBody) return;
+    const items = this.store.recurringItems;
+
+    if (items.length === 0) {
+      this.recurringTableBody.innerHTML = `
+        <tr>
+          <td colspan="7" class="text-center" style="padding: 32px; color: var(--text-muted);">
+            등록된 고정 지출/구독 내역이 없습니다.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    const periodMonth = this.getFormattedPeriod();
+    this.recurringTableBody.innerHTML = items.map(item => `
+      <tr>
+        <td><strong>매월 ${item.day}일</strong></td>
+        <td>${item.category}</td>
+        <td>${item.memo}</td>
+        <td style="color: var(--text-muted);">${item.payment}</td>
+        <td class="text-right text-expense" style="font-weight: 700;">-${this.formatCurrency(item.amount)}</td>
+        <td class="text-center">
+          <button class="btn btn-sm btn-glass" style="width: auto; padding: 4px 12px;" onclick="window.finlogApp.applyRecurring('${item.id}', '${periodMonth}')">
+            <i class="ri-add-line"></i> 당월 반영
+          </button>
+        </td>
+        <td class="text-center">
+          <button class="btn-delete" onclick="window.finlogApp.deleteRecurring('${item.id}')">
+            <i class="ri-delete-bin-line"></i>
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  applyRecurring(id, periodMonth) {
+    this.store.applyRecurringToCurrentMonth(id, periodMonth);
+    alert('당월 거래 내역에 고정 지출이 반영되었습니다.');
+    this.render();
+  }
+
+  deleteRecurring(id) {
+    if (confirm('이 고정 지출 항목을 삭제하시겠습니까?')) {
+      this.store.deleteRecurring(id);
+      this.render();
+    }
+  }
+
   deleteItem(id) {
     if (confirm('이 거래 내역을 삭제하시겠습니까?')) {
       this.store.deleteTransaction(id);
@@ -375,11 +603,8 @@ class FinlogUI {
     const items = this.store.getFilteredTransactions({ periodMonth, type: 'expense' });
     this.chartTotalAmount.textContent = this.formatCurrency(totalExpense);
 
-    // Group expenses by category
     const catMap = {};
-    items.forEach(t => {
-      catMap[t.category] = (catMap[t.category] || 0) + t.amount;
-    });
+    items.forEach(t => catMap[t.category] = (catMap[t.category] || 0) + t.amount);
 
     const categoryData = Object.keys(catMap).map(cat => ({
       category: cat,
@@ -387,8 +612,7 @@ class FinlogUI {
       percentage: totalExpense > 0 ? (catMap[cat] / totalExpense) * 100 : 0
     })).sort((a, b) => b.amount - a.amount);
 
-    // SVG Donut Slices calculation
-    const circumference = 2 * Math.PI * 38; // 238.76
+    const circumference = 2 * Math.PI * 38;
     let strokeDashoffsetAcc = 0;
     let slicesHTML = '';
 
@@ -409,7 +633,6 @@ class FinlogUI {
 
     this.donutSlicesGroup.innerHTML = slicesHTML;
 
-    // Render Legend
     this.categoryLegend.innerHTML = categoryData.map(item => `
       <div class="legend-item">
         <div class="legend-info">
