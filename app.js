@@ -1,9 +1,9 @@
 /**
  * Finlog - Glassmorphic Financial Tracker Core Logic
- * Version: 1.2.0 (Data Modeling & DB Ready Edition)
+ * Version: 1.3.0 (GCP Firebase Cloud Firestore Integration Edition)
  */
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 // Category Definitions with Glassmorphic Color Palette
 const CATEGORY_COLORS = {
@@ -38,10 +38,16 @@ class TransactionStore {
     this.storageKey = 'finlog_transactions_v1';
     this.recurringKey = 'finlog_recurring_v1';
     this.budgetKey = 'finlog_monthly_budget_v1';
+    this.fbConfigKey = 'finlog_firebase_config_v1';
     
     this.transactions = this.loadTransactions();
     this.recurringItems = this.loadRecurring();
     this.monthlyBudget = parseFloat(localStorage.getItem(this.budgetKey)) || 1500000;
+    this.firebaseConfig = this.loadFirebaseConfig();
+    this.db = null;
+    this.isCloudEnabled = false;
+
+    this.initFirebase();
   }
 
   loadTransactions() {
@@ -78,16 +84,87 @@ class TransactionStore {
     localStorage.setItem(this.recurringKey, JSON.stringify(this.recurringItems));
   }
 
+  loadFirebaseConfig() {
+    const data = localStorage.getItem(this.fbConfigKey);
+    if (!data) return null;
+    try {
+      return JSON.parse(data);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  saveFirebaseConfig(cfg) {
+    localStorage.setItem(this.fbConfigKey, JSON.stringify(cfg));
+    this.firebaseConfig = cfg;
+    this.initFirebase();
+  }
+
+  clearFirebaseConfig() {
+    localStorage.removeItem(this.fbConfigKey);
+    this.firebaseConfig = null;
+    this.isCloudEnabled = false;
+    location.reload();
+  }
+
+  initFirebase() {
+    if (typeof firebase === 'undefined' || !this.firebaseConfig || !this.firebaseConfig.apiKey) {
+      this.isCloudEnabled = false;
+      return;
+    }
+
+    try {
+      if (!firebase.apps.length) {
+        firebase.initializeApp(this.firebaseConfig);
+      }
+      this.db = firebase.firestore();
+      this.isCloudEnabled = true;
+      console.log('🔥 GCP Firebase Cloud Firestore Successfully Connected!');
+
+      // Listen for Firestore real-time updates
+      this.db.collection('transactions').onSnapshot((snapshot) => {
+        const cloudItems = [];
+        snapshot.forEach((doc) => {
+          cloudItems.push({ id: doc.id, ...doc.data() });
+        });
+        if (cloudItems.length > 0) {
+          // Sort by date descending
+          cloudItems.sort((a, b) => new Date(b.date) - new Date(a.date));
+          this.transactions = cloudItems;
+          this.saveTransactions();
+          if (window.finlogApp) window.finlogApp.render();
+        }
+      }, (error) => {
+        console.warn('Firebase sync warning:', error);
+      });
+    } catch (err) {
+      console.error('Firebase Init Error:', err);
+      this.isCloudEnabled = false;
+    }
+  }
+
   addTransaction(item) {
     item.id = Date.now().toString();
     this.transactions.unshift(item);
     this.saveTransactions();
+
+    if (this.isCloudEnabled && this.db) {
+      this.db.collection('transactions').doc(item.id).set(item).catch(err => {
+        console.error('Firestore save error:', err);
+      });
+    }
     return item;
   }
 
   deleteTransaction(id) {
     this.transactions = this.transactions.filter(t => t.id !== id);
     this.saveTransactions();
+
+    if (this.isCloudEnabled && this.db) {
+      this.db.collection('transactions').doc(id).delete().catch(err => {
+        console.error('Firestore delete error:', err);
+      });
+    }
   }
 
   addRecurring(item) {
@@ -193,9 +270,6 @@ class TransactionStore {
     URL.revokeObjectURL(url);
   }
 
-  /**
-   * Generates SQL Dump script for DB & AI Modeling
-   */
   exportToSQL() {
     if (this.transactions.length === 0) {
       alert('내보낼 거래 내역이 없습니다.');
@@ -245,7 +319,7 @@ class TransactionStore {
         const payment = parts[5] ? parts[5].trim() : '기타';
 
         if (date && amount) {
-          this.transactions.push({
+          const newItem = {
             id: 'imp_' + Date.now() + '_' + i,
             date,
             type: typeStr === '수입' || typeStr === 'income' ? 'income' : 'expense',
@@ -253,7 +327,11 @@ class TransactionStore {
             memo: memo || '불러온 거래',
             amount: amount || 0,
             payment: payment || '기타'
-          });
+          };
+          this.transactions.push(newItem);
+          if (this.isCloudEnabled && this.db) {
+            this.db.collection('transactions').doc(newItem.id).set(newItem);
+          }
           addedCount++;
         }
       }
@@ -273,6 +351,7 @@ class FinlogUI {
     this.initElements();
     this.bindEvents();
     this.render();
+    this.updateCloudStatusUI();
   }
 
   initElements() {
@@ -288,6 +367,20 @@ class FinlogUI {
     this.btnExportSql = document.getElementById('btnExportSql');
     this.btnExportSqlSettings = document.getElementById('btnExportSqlSettings');
     this.importCsvInput = document.getElementById('importCsvInput');
+
+    // Cloud Status Sidebar
+    this.cloudStatusDot = document.getElementById('cloudStatusDot');
+    this.cloudStatusTitle = document.getElementById('cloudStatusTitle');
+    this.cloudStatusDesc = document.getElementById('cloudStatusDesc');
+    this.btnSyncCloudSidebar = document.getElementById('btnSyncCloudSidebar');
+
+    // Firebase Settings UI
+    this.cfgApiKey = document.getElementById('cfgApiKey');
+    this.cfgProjectId = document.getElementById('cfgProjectId');
+    this.cfgAppId = document.getElementById('cfgAppId');
+    this.cfgAuthDomain = document.getElementById('cfgAuthDomain');
+    this.btnSaveFirebaseConfig = document.getElementById('btnSaveFirebaseConfig');
+    this.btnClearFirebaseConfig = document.getElementById('btnClearFirebaseConfig');
 
     this.totalBalanceEl = document.getElementById('totalBalance');
     this.monthlyIncomeEl = document.getElementById('monthlyIncome');
@@ -322,6 +415,14 @@ class FinlogUI {
     this.addRecurringForm = document.getElementById('addRecurringForm');
 
     if (this.inputDate) this.inputDate.valueAsDate = new Date();
+
+    // Fill existing config into inputs
+    if (this.store.firebaseConfig) {
+      if (this.cfgApiKey) this.cfgApiKey.value = this.store.firebaseConfig.apiKey || '';
+      if (this.cfgProjectId) this.cfgProjectId.value = this.store.firebaseConfig.projectId || '';
+      if (this.cfgAppId) this.cfgAppId.value = this.store.firebaseConfig.appId || '';
+      if (this.cfgAuthDomain) this.cfgAuthDomain.value = this.store.firebaseConfig.authDomain || '';
+    }
   }
 
   bindEvents() {
@@ -336,6 +437,10 @@ class FinlogUI {
     document.getElementById('linkToAllTransactions')?.addEventListener('click', (e) => {
       e.preventDefault();
       this.switchTab('transactions');
+    });
+
+    this.btnSyncCloudSidebar?.addEventListener('click', () => {
+      this.switchTab('settings');
     });
 
     this.prevMonthBtn.addEventListener('click', () => {
@@ -357,6 +462,29 @@ class FinlogUI {
     this.btnExportCsvSettings?.addEventListener('click', () => this.store.exportToCSV());
     this.btnExportSql?.addEventListener('click', () => this.store.exportToSQL());
     this.btnExportSqlSettings?.addEventListener('click', () => this.store.exportToSQL());
+
+    // Firebase Config Actions (v1.3.0)
+    this.btnSaveFirebaseConfig?.addEventListener('click', () => {
+      const apiKey = this.cfgApiKey.value.trim();
+      const projectId = this.cfgProjectId.value.trim();
+      const appId = this.cfgAppId.value.trim();
+      const authDomain = this.cfgAuthDomain.value.trim() || `${projectId}.firebaseapp.com`;
+
+      if (!apiKey || !projectId) {
+        alert('apiKey와 projectId는 필수 입력 항목입니다.');
+        return;
+      }
+
+      this.store.saveFirebaseConfig({ apiKey, projectId, appId, authDomain });
+      alert('GCP Firebase DB 설정이 성공적으로 저장되었습니다!');
+      this.updateCloudStatusUI();
+    });
+
+    this.btnClearFirebaseConfig?.addEventListener('click', () => {
+      if (confirm('Firebase DB 연동을 해제하시겠습니까?')) {
+        this.store.clearFirebaseConfig();
+      }
+    });
 
     this.importCsvInput?.addEventListener('change', (e) => {
       const file = e.target.files[0];
@@ -395,6 +523,18 @@ class FinlogUI {
       e.preventDefault();
       this.handleAddRecurringSubmit();
     });
+  }
+
+  updateCloudStatusUI() {
+    if (this.store.isCloudEnabled) {
+      if (this.cloudStatusDot) this.cloudStatusDot.className = 'status-dot online';
+      if (this.cloudStatusTitle) this.cloudStatusTitle.textContent = 'GCP Firestore ON';
+      if (this.cloudStatusDesc) this.cloudStatusDesc.textContent = '구글 클라우드 DB와 실시간으로 안전하게 동기화 중입니다.';
+    } else {
+      if (this.cloudStatusDot) this.cloudStatusDot.className = 'status-dot offline';
+      if (this.cloudStatusTitle) this.cloudStatusTitle.textContent = 'Cloud Sync OFF';
+      if (this.cloudStatusDesc) this.cloudStatusDesc.textContent = '로컬 저장 중. Firebase Config를 설정하면 구글 DB와 실시간 동기화됩니다.';
+    }
   }
 
   getFormattedPeriod() {
@@ -487,6 +627,7 @@ class FinlogUI {
     this.renderRecurringTable();
     this.renderChart(periodMonth, summary.totalExpense);
     this.renderAnalytics(periodMonth);
+    this.updateCloudStatusUI();
   }
 
   renderTables() {

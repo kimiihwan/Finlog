@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Finlog - Trendy Glassmorphism Design System (v1.1.0)
+   Finlog - Trendy Glassmorphism Design System (v1.3.0)
    ========================================================================== */
 
 :root {
@@ -227,10 +227,15 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  transition: var(--transition);
 }
 .status-dot.online {
   background: var(--income-color);
   box-shadow: 0 0 10px var(--income-color);
+}
+
+.status-dot.offline {
+  background: var(--text-muted);
 }
 
 .status-title {
