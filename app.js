@@ -1,9 +1,9 @@
 /**
  * Finlog - Glassmorphic Financial Tracker Core Logic
- * Version: 1.5.0 (GCP Firebase Cloud Hosting Release Edition)
+ * Version: 1.6.0 (DBeaver Direct Connection / Supabase PostgreSQL Integration)
  */
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 // Sleek Monotone & Slate Category Colors
 const CATEGORY_COLORS = {
@@ -39,15 +39,20 @@ class TransactionStore {
     this.recurringKey = 'finlog_recurring_v1';
     this.budgetKey = 'finlog_monthly_budget_v1';
     this.fbConfigKey = 'finlog_firebase_config_v1';
+    this.supaConfigKey = 'finlog_supabase_config_v1';
     
     this.transactions = this.loadTransactions();
     this.recurringItems = this.loadRecurring();
     this.monthlyBudget = parseFloat(localStorage.getItem(this.budgetKey)) || 1500000;
     this.firebaseConfig = this.loadFirebaseConfig();
+    this.supaConfig = this.loadSupaConfig();
+    
     this.db = null;
+    this.supaClient = null;
     this.isCloudEnabled = false;
 
     this.initFirebase();
+    this.initSupabase();
   }
 
   loadTransactions() {
@@ -107,9 +112,27 @@ class TransactionStore {
     location.reload();
   }
 
+  loadSupaConfig() {
+    const data = localStorage.getItem(this.supaConfigKey);
+    if (!data) return null;
+    try { return JSON.parse(data); } catch(e) { return null; }
+  }
+
+  saveSupaConfig(cfg) {
+    localStorage.setItem(this.supaConfigKey, JSON.stringify(cfg));
+    this.supaConfig = cfg;
+    this.initSupabase();
+  }
+
+  clearSupaConfig() {
+    localStorage.removeItem(this.supaConfigKey);
+    this.supaConfig = null;
+    this.supaClient = null;
+    location.reload();
+  }
+
   initFirebase() {
     if (typeof firebase === 'undefined' || !this.firebaseConfig || !this.firebaseConfig.apiKey) {
-      this.isCloudEnabled = false;
       return;
     }
 
@@ -136,7 +159,37 @@ class TransactionStore {
       });
     } catch (err) {
       console.error('Firebase Init Error:', err);
-      this.isCloudEnabled = false;
+    }
+  }
+
+  initSupabase() {
+    if (typeof window.supabase === 'undefined' || !this.supaConfig || !this.supaConfig.url || !this.supaConfig.key) {
+      return;
+    }
+
+    try {
+      this.supaClient = window.supabase.createClient(this.supaConfig.url, this.supaConfig.key);
+      this.isCloudEnabled = true;
+      console.log('🐘 PostgreSQL Supabase Direct Database Client Connected!');
+
+      // Fetch initial data from PostgreSQL DB
+      this.supaClient.from('transactions').select('*').order('date', { ascending: false }).then(({ data, error }) => {
+        if (!error && data && data.length > 0) {
+          this.transactions = data.map(item => ({
+            id: String(item.id),
+            date: item.date,
+            type: item.type,
+            category: item.category,
+            memo: item.memo,
+            amount: parseFloat(item.amount),
+            payment: item.payment_method || item.payment || '신한 체크카드'
+          }));
+          this.saveTransactions();
+          if (window.finlogApp) window.finlogApp.render();
+        }
+      });
+    } catch (err) {
+      console.error('Supabase Init Error:', err);
     }
   }
 
@@ -145,11 +198,26 @@ class TransactionStore {
     this.transactions.unshift(item);
     this.saveTransactions();
 
-    if (this.isCloudEnabled && this.db) {
-      this.db.collection('transactions').doc(item.id).set(item).catch(err => {
-        console.error('Firestore save error:', err);
+    // Firebase Sync
+    if (this.db) {
+      this.db.collection('transactions').doc(item.id).set(item).catch(err => console.error('Firestore save error:', err));
+    }
+
+    // PostgreSQL Direct Sync
+    if (this.supaClient) {
+      this.supaClient.from('transactions').insert([{
+        id: item.id,
+        date: item.date,
+        type: item.type,
+        category: item.category,
+        memo: item.memo,
+        amount: item.amount,
+        payment_method: item.payment
+      }]).then(({ error }) => {
+        if (error) console.error('PostgreSQL insert error:', error);
       });
     }
+
     return item;
   }
 
@@ -157,9 +225,13 @@ class TransactionStore {
     this.transactions = this.transactions.filter(t => t.id !== id);
     this.saveTransactions();
 
-    if (this.isCloudEnabled && this.db) {
-      this.db.collection('transactions').doc(id).delete().catch(err => {
-        console.error('Firestore delete error:', err);
+    if (this.db) {
+      this.db.collection('transactions').doc(id).delete().catch(err => console.error('Firestore delete error:', err));
+    }
+
+    if (this.supaClient) {
+      this.supaClient.from('transactions').delete().eq('id', id).then(({ error }) => {
+        if (error) console.error('PostgreSQL delete error:', error);
       });
     }
   }
@@ -326,8 +398,11 @@ class TransactionStore {
             payment: payment || '기타'
           };
           this.transactions.push(newItem);
-          if (this.isCloudEnabled && this.db) {
-            this.db.collection('transactions').doc(newItem.id).set(newItem);
+          if (this.db) this.db.collection('transactions').doc(newItem.id).set(newItem);
+          if (this.supaClient) {
+            this.supaClient.from('transactions').insert([{
+              id: newItem.id, date: newItem.date, type: newItem.type, category: newItem.category, memo: newItem.memo, amount: newItem.amount, payment_method: newItem.payment
+            }]);
           }
           addedCount++;
         }
@@ -371,6 +446,12 @@ class FinlogUI {
     this.cloudStatusDesc = document.getElementById('cloudStatusDesc');
     this.btnSyncCloudSidebar = document.getElementById('btnSyncCloudSidebar');
 
+    // Supabase Settings UI
+    this.cfgSupaUrl = document.getElementById('cfgSupaUrl');
+    this.cfgSupaKey = document.getElementById('cfgSupaKey');
+    this.btnSaveSupaConfig = document.getElementById('btnSaveSupaConfig');
+    this.btnClearSupaConfig = document.getElementById('btnClearSupaConfig');
+
     // Firebase Settings UI
     this.cfgApiKey = document.getElementById('cfgApiKey');
     this.cfgProjectId = document.getElementById('cfgProjectId');
@@ -412,6 +493,11 @@ class FinlogUI {
     this.addRecurringForm = document.getElementById('addRecurringForm');
 
     if (this.inputDate) this.inputDate.valueAsDate = new Date();
+
+    if (this.store.supaConfig) {
+      if (this.cfgSupaUrl) this.cfgSupaUrl.value = this.store.supaConfig.url || '';
+      if (this.cfgSupaKey) this.cfgSupaKey.value = this.store.supaConfig.key || '';
+    }
 
     if (this.store.firebaseConfig) {
       if (this.cfgApiKey) this.cfgApiKey.value = this.store.firebaseConfig.apiKey || '';
@@ -458,6 +544,28 @@ class FinlogUI {
     this.btnExportSql?.addEventListener('click', () => this.store.exportToSQL());
     this.btnExportSqlSettings?.addEventListener('click', () => this.store.exportToSQL());
 
+    // Supabase PostgreSQL Config (v1.6.0)
+    this.btnSaveSupaConfig?.addEventListener('click', () => {
+      const url = this.cfgSupaUrl.value.trim();
+      const key = this.cfgSupaKey.value.trim();
+
+      if (!url || !key) {
+        alert('Supabase URL과 Anon Key를 모두 입력해 주세요.');
+        return;
+      }
+
+      this.store.saveSupaConfig({ url, key });
+      alert('PostgreSQL DB (Supabase) 설정이 완료되었습니다! DBeaver에서 바로 분석 가능합니다.');
+      this.updateCloudStatusUI();
+    });
+
+    this.btnClearSupaConfig?.addEventListener('click', () => {
+      if (confirm('PostgreSQL DB 연동을 해제하시겠습니까?')) {
+        this.store.clearSupaConfig();
+      }
+    });
+
+    // Firebase Config Actions
     this.btnSaveFirebaseConfig?.addEventListener('click', () => {
       const apiKey = this.cfgApiKey.value.trim();
       const projectId = this.cfgProjectId.value.trim();
@@ -520,14 +628,18 @@ class FinlogUI {
   }
 
   updateCloudStatusUI() {
-    if (this.store.isCloudEnabled) {
+    if (this.store.supaClient) {
+      if (this.cloudStatusDot) this.cloudStatusDot.className = 'status-dot online';
+      if (this.cloudStatusTitle) this.cloudStatusTitle.textContent = 'PostgreSQL DB ON';
+      if (this.cloudStatusDesc) this.cloudStatusDesc.textContent = '클라우드 PostgreSQL DB에 자동 저장 중. DBeaver에서 바로 분석 가능합니다.';
+    } else if (this.store.isCloudEnabled) {
       if (this.cloudStatusDot) this.cloudStatusDot.className = 'status-dot online';
       if (this.cloudStatusTitle) this.cloudStatusTitle.textContent = 'GCP Firestore ON';
       if (this.cloudStatusDesc) this.cloudStatusDesc.textContent = '구글 클라우드 DB와 실시간 동기화 중입니다.';
     } else {
       if (this.cloudStatusDot) this.cloudStatusDot.className = 'status-dot offline';
       if (this.cloudStatusTitle) this.cloudStatusTitle.textContent = 'Cloud Sync OFF';
-      if (this.cloudStatusDesc) this.cloudStatusDesc.textContent = '로컬 저장 중. Firebase Config 설정 시 구글 DB와 실시간 동기화됩니다.';
+      if (this.cloudStatusDesc) this.cloudStatusDesc.textContent = '로컬 저장 중. DB 연동 시 DBeaver에서 바로 원격 분석이 가능합니다.';
     }
   }
 

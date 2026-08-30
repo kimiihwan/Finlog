@@ -4,44 +4,30 @@
 
 ---
 
-## ☁️ GCP (Google Cloud Platform) 구글 서버 배포 가이드 (Firebase Hosting)
+## 🐘 DBeaver 원격 접속용 PostgreSQL DB 실시간 연동 (v1.6.0)
 
-본 프로젝트에는 **GCP Firebase Cloud Hosting 설정(`firebase.json`)**이 포함되어 있어, 명령어 한 줄로 내 가계부 웹 애플리케이션을 구글 서버에 완전히 올리고 상시 운영 도메인을 발급받을 수 있습니다.
+다운로드받을 필요 없이 내 가계부에서 거래를 등록할 때마다 **원격 클라우드 PostgreSQL DB**에 즉시 저장되어, DBeaver에서 `SELECT * FROM transactions;` 엔터 한 번으로 실시간 분석이 가능합니다.
 
-### 🚀 GCP 구글 서버로 원클릭 배포(Deploy) 명령어
-VS Code 터미널에서 아래 2개 명령어를 실행합니다:
-
-```bash
-# 1) Firebase 구글 계정 로그인 (최초 1회)
-npx firebase login
-
-# 2) GCP 구글 클라우드 서버로 배포하기!
-npx firebase deploy
-```
-
-배포가 완료되면 화면에 **`https://프로젝트아이디.web.app`** 도메인 주소가 표시되며, 24시간 항상 구글 클라우드 인프라에서 가계부가 구동됩니다.
+### 💡 DBeaver 원격 연결 3단계 (Supabase / GCP Cloud SQL)
+1. [Supabase 공식 사이트 (supabase.com)](https://supabase.com/) 접속 ➔ 회원가입 후 **New Project** 생성 (무료)
+2. **Project Settings ➔ API**에서 `Project URL`과 `anon public key`를 복사하여 가계부 웹의 **`설정 & Direct DB`** 탭에 입력!
+3. DBeaver에서 **New Connection ➔ PostgreSQL** 선택 후, Supabase **Project Settings ➔ Database**에 표시된 `Host`, `Port (5432)`, `Database (postgres)`, `User`, `Password`를 입력하면 **DBeaver에서 실시간 쿼리 가능!**
 
 ---
 
 ## 📜 버전 변경 이력 (Changelog)
 
+### 🐘 v1.6.0 (2026-08-30) - DBeaver Direct SQL Integration
+- **✨ [NEW] DBeaver 원격 실시간 접속용 PostgreSQL DB Client 지원**:
+  - Supabase / GCP Cloud SQL(PostgreSQL) 원격 DB 실시간 읽기/쓰기 Client 엔진 통합.
+  - 가계부 작성 시 클라우드 PostgreSQL `transactions` 테이블에 데이터 자동 저장.
+  - 사이드바 상태등 `PostgreSQL DB ON` 연동 정보 지원.
+
 ### ☁️ v1.5.0 (2026-08-30) - GCP Cloud Hosting Release
-- **✨ [NEW] GCP Firebase Hosting 구글 서버 배포 시스템 구축**:
-  - GCP 구글 클라우드 서버 배포용 `firebase.json` 및 `.firebaserc` 인프라 세팅.
-  - `npx firebase deploy` 한 줄로 구글 도메인(`https://*.web.app`) 상시 배포 지원.
-  - 버전 배지 `v1.5.0`으로 갱신.
+- **✨ GCP Firebase Hosting 원클릭 구글 서버 배포 지원**.
 
 ### 🎨 v1.4.0 (2026-08-30) - Clean Minimalist Redesign
 - **✨ AI 양산형 전형적 글래스모피즘 색상 제거**: 토스/Vercel 스타일 미니멀 차콜 모노톤 테마 개편.
 
 ### 🚀 v1.3.0 (2026-08-30) - Cloud DB Integration Release
-- **✨ GCP Firebase Cloud Firestore 실시간 연동 지원**: 백엔드 서버 없이 구글 DB 실시간 동기화.
-
-### 🚀 v1.2.0 (2026-08-30) - Data Modeling & DB Release
-- **✨ DB SQL Dump 내보내기**: PostgreSQL / SQLite / GCP Cloud SQL 호환 `.sql` 추출.
-
-### 🚀 v1.1.0 (2026-08-29) - Minor Release
-- **✨ 엑셀/CSV 내보내기 & 불러오기** / **고정 지출 및 정기 구독 관리 탭**.
-
-### 🌟 v1.0.0 (2026-08-29) - Initial Release
-- **✨ 최초 글래스모픽 웹 가계부 초안 작성**: 대시보드, SVG 도넛 차트, 거래 내역 CRUD.
+- **✨ GCP Firebase Cloud Firestore 실시간 연동 지원**.
