@@ -1,19 +1,19 @@
 /**
  * Finlog - Glassmorphic Financial Tracker Core Logic
- * Version: 1.3.0 (GCP Firebase Cloud Firestore Integration Edition)
+ * Version: 1.4.0 (Clean Minimalist Monotone Theme Edition)
  */
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
-// Category Definitions with Glassmorphic Color Palette
+// Sleek Monotone & Slate Category Colors
 const CATEGORY_COLORS = {
-  '식비': '#f43f5e',     // Neon Rose
-  '교통': '#3b82f6',     // Bright Blue
-  '쇼핑': '#ec4899',     // Pink
-  '주거/통신': '#8b5cf6', // Violet
+  '식비': '#6366f1',     // Indigo
+  '교통': '#38bdf8',     // Sky Blue
+  '쇼핑': '#a855f7',     // Purple Slate
+  '주거/통신': '#64748b', // Slate Gray
   '문화/취미': '#06b6d4', // Cyan
   '급여/수입': '#10b981', // Emerald Green
-  '기타': '#f59e0b'      // Amber
+  '기타': '#94a3b8'      // Neutral Gray
 };
 
 // Initial Mock Data
@@ -119,16 +119,13 @@ class TransactionStore {
       }
       this.db = firebase.firestore();
       this.isCloudEnabled = true;
-      console.log('🔥 GCP Firebase Cloud Firestore Successfully Connected!');
 
-      // Listen for Firestore real-time updates
       this.db.collection('transactions').onSnapshot((snapshot) => {
         const cloudItems = [];
         snapshot.forEach((doc) => {
           cloudItems.push({ id: doc.id, ...doc.data() });
         });
         if (cloudItems.length > 0) {
-          // Sort by date descending
           cloudItems.sort((a, b) => new Date(b.date) - new Date(a.date));
           this.transactions = cloudItems;
           this.saveTransactions();
@@ -416,7 +413,6 @@ class FinlogUI {
 
     if (this.inputDate) this.inputDate.valueAsDate = new Date();
 
-    // Fill existing config into inputs
     if (this.store.firebaseConfig) {
       if (this.cfgApiKey) this.cfgApiKey.value = this.store.firebaseConfig.apiKey || '';
       if (this.cfgProjectId) this.cfgProjectId.value = this.store.firebaseConfig.projectId || '';
@@ -457,13 +453,11 @@ class FinlogUI {
     this.typeFilter?.addEventListener('change', () => this.renderTables());
     this.categoryFilter?.addEventListener('change', () => this.renderTables());
 
-    // CSV & SQL Export / Import
     this.btnExportCsv?.addEventListener('click', () => this.store.exportToCSV());
     this.btnExportCsvSettings?.addEventListener('click', () => this.store.exportToCSV());
     this.btnExportSql?.addEventListener('click', () => this.store.exportToSQL());
     this.btnExportSqlSettings?.addEventListener('click', () => this.store.exportToSQL());
 
-    // Firebase Config Actions (v1.3.0)
     this.btnSaveFirebaseConfig?.addEventListener('click', () => {
       const apiKey = this.cfgApiKey.value.trim();
       const projectId = this.cfgProjectId.value.trim();
@@ -529,11 +523,11 @@ class FinlogUI {
     if (this.store.isCloudEnabled) {
       if (this.cloudStatusDot) this.cloudStatusDot.className = 'status-dot online';
       if (this.cloudStatusTitle) this.cloudStatusTitle.textContent = 'GCP Firestore ON';
-      if (this.cloudStatusDesc) this.cloudStatusDesc.textContent = '구글 클라우드 DB와 실시간으로 안전하게 동기화 중입니다.';
+      if (this.cloudStatusDesc) this.cloudStatusDesc.textContent = '구글 클라우드 DB와 실시간 동기화 중입니다.';
     } else {
       if (this.cloudStatusDot) this.cloudStatusDot.className = 'status-dot offline';
       if (this.cloudStatusTitle) this.cloudStatusTitle.textContent = 'Cloud Sync OFF';
-      if (this.cloudStatusDesc) this.cloudStatusDesc.textContent = '로컬 저장 중. Firebase Config를 설정하면 구글 DB와 실시간 동기화됩니다.';
+      if (this.cloudStatusDesc) this.cloudStatusDesc.textContent = '로컬 저장 중. Firebase Config 설정 시 구글 DB와 실시간 동기화됩니다.';
     }
   }
 

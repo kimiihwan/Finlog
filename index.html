@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Finlog - 글래스모픽 스마트 가계부</title>
+  <title>Finlog - 미니멀 스마트 가계부</title>
   <!-- Google Fonts: Plus Jakarta Sans & Noto Sans KR -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,7 +17,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 </head>
 <body>
-  <!-- Ambient Background Glows -->
+  <!-- Ambient Background Glows (Disabled for Clean Minimalist Aesthetic) -->
   <div class="ambient-glow glow-1"></div>
   <div class="ambient-glow glow-2"></div>
   <div class="ambient-glow glow-3"></div>
@@ -30,7 +30,7 @@
           <i class="ri-wallet-3-line"></i>
         </div>
         <span class="brand-name">Finlog</span>
-        <span class="badge" id="appVersionBadge">v1.3.0</span>
+        <span class="badge" id="appVersionBadge">v1.4.0</span>
       </div>
 
       <nav class="nav-menu">
@@ -342,16 +342,16 @@
           </div>
         </section>
 
-        <!-- GCP & Settings Tab (v1.3.0 GCP Firebase DB Integration) -->
+        <!-- GCP & Settings Tab -->
         <section id="settings" class="tab-view">
           <div class="glass-card settings-card">
-            <h3><i class="ri-cloud-setting-line"></i> GCP Firebase 클라우드 DB 연동 설정 (v1.3.0)</h3>
+            <h3><i class="ri-cloud-setting-line"></i> GCP Firebase 클라우드 DB 연동 설정 (v1.4.0)</h3>
             <p class="desc-text">구글 Firebase Console에서 발급받은 <code>firebaseConfig</code> 키를 입력하시면, 핸드폰/다른 컴퓨터 어디서든 내 가계부가 구글 Cloud DB와 실시간 연동됩니다.</p>
 
-            <!-- Firebase Config Box (v1.3.0) -->
+            <!-- Firebase Config Box -->
             <div class="gcp-config-box glass-panel" style="margin-bottom: 24px;">
-              <h4><i class="ri-fire-line" style="color: #f59e0b;"></i> GCP Firebase Cloud Firestore 설정</h4>
-              <p>Firebase 콘솔에서 발급받은 JSON 전체 또는 개별 키값을 아래에 붙여넣고 저장하세요.</p>
+              <h4><i class="ri-fire-line" style="color: var(--accent-primary);"></i> GCP Firebase Cloud Firestore 설정</h4>
+              <p>Firebase 콘솔에서 발급받은 키값을 입력하고 저장하세요.</p>
               <div class="form-grid">
                 <div class="form-group">
                   <label>apiKey</label>
