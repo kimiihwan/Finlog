@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "finlog-app"
-  }
+    "default": "finlog-6e038"
+  },
+  "targets": {},
+  "etags": {}
 }
