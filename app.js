@@ -1,9 +1,9 @@
 /**
  * Finlog - Glassmorphic Financial Tracker Core Logic
- * Version: 1.4.0 (Clean Minimalist Monotone Theme Edition)
+ * Version: 1.5.0 (GCP Firebase Cloud Hosting Release Edition)
  */
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 
 // Sleek Monotone & Slate Category Colors
 const CATEGORY_COLORS = {
